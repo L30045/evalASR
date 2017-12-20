@@ -1,0 +1,24 @@
+%% Open EEGLAB
+eeglab_path = which('eeglab.m');
+if isempty(eeglab_path)
+    current_path = pwd;
+    addpath(['dependencies' filesep 'eeglab_current']); eeglab
+    cd(current_path);
+    addpath(genpath('./'));
+end
+
+%% Add file path
+sessionPath = '/data/projects/Chunshu/NCTUStandardLevel2/session/';
+
+%% load raw EEG data
+channelToRemove = {'vehicle position'};
+bandPassFilt = [0.5 100];
+resamplingRate = 250;
+sessNum = [5, 22, 31, 35, 36, 41, 43, 44, 49, 50];
+thresASR = [1, 2.5, 3, 5, 10, 20, 30, 40, 50, 70, 100, 200, 500, 1000];
+
+for i = 1:length(sessNum)
+    rawdataPath = dir([sessionPath,sprintf('%d/',sessNum(i)),'*.set']);
+    EEG_raw = pop_loadset()
+    
+end
