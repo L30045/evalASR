@@ -3,43 +3,46 @@ restoredefaultpath
 eeglab_path = which('eeglab.m');
 if isempty(eeglab_path)
     current_path = pwd;
-    addpath('eeglab_current'); eeglab
+    addpath(['dependencies' filesep 'eeglab_current']); eeglab
     cd(current_path);
     addpath(genpath('./'));
 end
 
 %% Add file path
-sessionPath = '/data/projects/Chunshu/NCTUStandardLevel2/session/';
-saveSessPath = '/data/projects/yuan/evalASR/dataset/';
+sessionPath = '/data/projects/yuan/lane-keeping task dataset with chanlocs/';
+saveSessPath = '/data/projects/yuan/evalASR/simplified dataset/';
+saveParasPath = '/home/yuan/Documents/evalASR/parameters/';
 
 %% load raw EEG data
 channelToRemove = {'vehicle position'};
 bandPassFilt = [0.5 100];
 resamplingRate = 250;
 thresASR = [1, 2.5, 3, 5, 10, 20, 30, 40, 50, 70, 100, 200, 500, 1000];
-notTestyet = [];
 
 %% begin main pipeline
-for i = 1:80
+for i = 1:1
     % Structure to save all the parameters
-    para = struct('sessNum',[],'icaweights',[],'icasphere',[],'channel_variance',[],'icaact',[],'entropy',[],'ASR',[],'etc',[]); 
-    para.sessNum = i;
-    subjectId = i;
+    if ~exist([saveParasPath,sprintf('paras_s%d.mat',i)],'file')
+        paras = initParas();
+        paras.sessNum = i;
+    else
+        load([saveParasPath,sprintf('paras_s%d.mat',i)]);
+    end
     
-    rawdataPath = dir([sessionPath,sprintf('%d/',i),'*.set']);
+    rawdataPath = dir([sessionPath,sprintf('s%d/',i),'*.set']);
     rawdataPath = [rawdataPath.folder filesep rawdataPath.name];
     EEG_raw = pop_loadset(rawdataPath);
     
     % Remove vehicle channel and reconstructed channel
-    channelToRemove = {'vehicle position','A1','A2'};
+    channelToRemove = {'vehicle position'};
     
     
     EEG_raw = pop_select(EEG_raw,'nochannel',channelToRemove);
     nCh = EEG_raw.nbchan;
     rankData = rank(double(EEG_raw.data(:,1:1e5)));
-    para.etc.rankData = rankData;
-    para.etc.channelRemoved = channelToRemove;
-    para.etc.chanlocs = EEG_raw.chanlocs;
+    paras.etc.rankData = rankData;
+    paras.etc.channelRemoved = channelToRemove;
+    paras.etc.chanlocs = EEG_raw.chanlocs;
     
     % Band pass and resample
     EEG_raw = pop_eegfiltnew(EEG_raw, bandPassFilt(1), bandPassFilt(2), [], 0, [], 0);
@@ -50,7 +53,7 @@ for i = 1:80
     
     %% Raw section
     % compute var for each channels
-    para.channel_variance.var_raw_all = var(EEG_raw.data,0,2);
+    paras.channel_variance.var_raw_all = var(EEG_raw.data,0,2);
     
     % compute ICs for raw data
 %     if rankData ~= nCh
@@ -58,19 +61,19 @@ for i = 1:80
 %     else
 %         [para.icaweights.W_raw, para.icasphere.S_raw] = runica(double(EEG_raw.data),'lrate',0.001,'extended',1);
 %     end
-    [para.icaweights.W_raw, para.icasphere.S_raw] = runica(double(EEG_raw.data),'extended',1);
+    [paras.icaweights.W_raw, paras.icasphere.S_raw] = runica(double(EEG_raw.data),'extended',1);
     
     % compute marginal entropy
-    para.entropy.ent_raw = getent2(EEG_raw.data);
-    icaact = para.icaweights.W_raw * para.icasphere.S_raw * EEG_raw.data;
-    para.entropy.ent_rawICA = getent2(icaact);
+    paras.entropy.ent_raw = getent2(EEG_raw.data);
+    icaact = paras.icaweights.W_raw * paras.icasphere.S_raw * EEG_raw.data;
+    paras.entropy.ent_rawICA = getent2(icaact);
     
     %% Clean section
-    [EEG_clean, clean_mask, para.etc.clean_info] = getClean(EEG_raw,sessNum(i));
+    [EEG_clean, clean_mask, paras.etc.clean_info] = getClean(EEG_raw,i);
     % compute var for raw data
-    para.channel_variance.var_raw_cSection = var(EEG_raw.data(:,clean_mask),0,2);
-    para.channel_variance.var_raw_bSection = var(EEG_raw.data(:,~clean_mask),0,2);
-    para.channel_variance.var_raw_all = var(EEG_raw.data,0,2);
+    paras.channel_variance.var_raw_cSection = var(EEG_raw.data(:,clean_mask),0,2);
+    paras.channel_variance.var_raw_bSection = var(EEG_raw.data(:,~clean_mask),0,2);
+    paras.channel_variance.var_raw_all = var(EEG_raw.data,0,2);
     
     % compute ICs for clean section 
 %     if rankData ~= nCh
@@ -78,30 +81,30 @@ for i = 1:80
 %     else
 %         [para.icaweights.W_clean, para.icasphere.S_clean] = runica(double(EEG_clean.data),'lrate', 0.001,'extended',1);
 %     end
-    [para.icaweights.W_clean, para.icasphere.S_clean] = runica(double(EEG_clean.data),'extended',1);    
+    [paras.icaweights.W_clean, paras.icasphere.S_clean] = runica(double(EEG_clean.data),'extended',1);    
     
     % compute marginal entropy
-    para.entropy.ent_clean = getent2(EEG_clean.data);
-    icaact = para.icaweights.W_clean * para.icasphere.S_clean * EEG_clean.data;
-    para.entropy.ent_cleanICA = getent2(icaact);
+    paras.entropy.ent_clean = getent2(EEG_clean.data);
+    icaact = paras.icaweights.W_clean * paras.icasphere.S_clean * EEG_clean.data;
+    paras.entropy.ent_cleanICA = getent2(icaact);
     
     % compute clean ICs activites on raw data
-    para.icaact.icaact_cleanIC_cSection = var(para.icaweights.W_clean * para.icasphere.S_clean * EEG_clean.data,0,2);
-    para.icaact.icaact_cleanIC_bSection = var(para.icaweights.W_clean * para.icasphere.S_clean * EEG_raw.data(:,~clean_mask).data,0,2);
-    para.icaact.icaact_cleanIC_all = var(para.icaweights.W_clean * para.icasphere.S_clean * EEG_raw.data,0,2);
+    paras.icaact.icaact_cleanIC_cSection = var(paras.icaweights.W_clean * paras.icasphere.S_clean * EEG_clean.data,0,2);
+    paras.icaact.icaact_cleanIC_bSection = var(paras.icaweights.W_clean * paras.icasphere.S_clean * EEG_raw.data(:,~clean_mask).data,0,2);
+    paras.icaact.icaact_cleanIC_all = var(paras.icaweights.W_clean * paras.icasphere.S_clean * EEG_raw.data,0,2);
     
     % compute raw ICs activites on raw data
-    para.icaact.icaact_rawIC_cSection = var(para.icaweights.W_raw * para.icasphere.S_raw * EEG_raw.data(:,clean_mask),0,2);
-    para.icaact.icaact_rawIC_bSection = var(para.icaweights.W_raw * para.icasphere.S_raw * EEG_raw.data(:,~clean_mask),0,2);
-    para.icaact.icaact_rawIC_all = var(para.icaweights.W_raw * para.icasphere.S_raw * EEG_raw.data,0,2);
+    paras.icaact.icaact_rawIC_cSection = var(paras.icaweights.W_raw * paras.icasphere.S_raw * EEG_raw.data(:,clean_mask),0,2);
+    paras.icaact.icaact_rawIC_bSection = var(paras.icaweights.W_raw * paras.icasphere.S_raw * EEG_raw.data(:,~clean_mask),0,2);
+    paras.icaact.icaact_rawIC_all = var(paras.icaweights.W_raw * paras.icasphere.S_raw * EEG_raw.data,0,2);
     
     %% save simplified EEG dataset
-    savepath = sprintf([saveSessPath,'s%d/'],sessNum(i));
+    savepath = sprintf([saveSessPath,'s%d/'],i);
     mkdir(savepath);
     EEG_raw = eraseData(EEG_raw);
     EEG_clean = eraseData(EEG_clean);
-    eval(sprintf('pop_saveset(EEG_raw, ''filename'', ''s%d_resampled.set'',''filepath'',savepath);', sessNum(i)));
-    eval(sprintf('pop_saveset(EEG_clean, ''filename'', ''s%d_cleanSection.set'',''filepath'',savepath);', sessNum(i)));
+    eval(sprintf('pop_saveset(EEG_raw, ''filename'', ''s%d_resampled.set'',''filepath'',savepath);', i));
+    eval(sprintf('pop_saveset(EEG_clean, ''filename'', ''s%d_cleanSection.set'',''filepath'',savepath);', i));
     
     %% ASR section
     % disable high pass filter, bad channel removal and window rejection for ASR
@@ -112,9 +115,9 @@ for i = 1:80
     thresWindow = -1;
     
     % spatial_filter for raw ICs
-    spatial_filter_raw = para.icaweights.W_raw * para.icasphere.S_raw;
+    spatial_filter_raw = paras.icaweights.W_raw * paras.icasphere.S_raw;
     % spatial_filter for clean ICs
-    spatial_filter_clean = para.icaweights.W_clean * para.icasphere.S_clean;
+    spatial_filter_clean = paras.icaweights.W_clean * paras.icasphere.S_clean;
     
     % para for parfor
     var_asr_clean = zeros(nCh,length(thresASR));
@@ -177,7 +180,7 @@ for i = 1:80
     
     % save simplified EEG dataset
     EEG_asr = eraseData(EEG_asr);
-    filename = sprintf('s%d_ASR%.1f.set',subjectId, thresASR(1));
+    filename = sprintf('s%d_ASR%.1f.set',i, thresASR(1));
     pop_saveset(EEG_asr,'filename', filename,'filepath',savepath);
     
     %% compute thresASR    
@@ -219,7 +222,7 @@ for i = 1:80
         
         % save simplified EEG dataset
         EEG_asr = eraseData(EEG_asr);
-        filename = sprintf('s%d_ASR%.1f.set',subjectId, thresASR(j));
+        filename = sprintf('s%d_ASR%.1f.set',i, thresASR(j));
         pop_saveset(EEG_asr,'filename', filename,'filepath',savepath);
     end
     
@@ -243,15 +246,15 @@ for i = 1:80
     end
     
     else
-        notTestyet = [notTestyet, subjectId];
+        notTestyet = [notTestyet, i];
     end
     
     %% save parameters
-    eval(sprintf('para_s%02d = para;',sessNum(i)));
+    eval(sprintf('para_s%02d = para;',i));
     if ~exist('parameters/para_info.mat', 'file')
-        save('parameters/para_info.mat',sprintf('para_s%02d',sessNum(i)));
+        save('parameters/para_info.mat',sprintf('para_s%02d',i));
     else
-        save('parameters/para_info.mat',sprintf('para_s%02d',sessNum(i)),'-append');
+        save('parameters/para_info.mat',sprintf('para_s%02d',i),'-append');
     end
     
 end
